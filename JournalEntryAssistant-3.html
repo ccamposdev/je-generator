@@ -1,0 +1,335 @@
+<html><head><base href="https://journal-entry-assistant.app/">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Journal Entry Assistant</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --primary-color: #4a90e2;
+    --secondary-color: #f5f7fa;
+    --text-color: #333;
+    --border-color: #e0e0e0;
+  }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  h1 {
+    text-align: center;
+    color: var(--primary-color);
+    margin-bottom: 2rem;
+  }
+
+  .upload-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+
+  #uploadBtn, #downloadBtn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    font-size: 1rem;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+  }
+
+  #uploadBtn:hover, #downloadBtn:hover {
+    background-color: #3a7bc8;
+  }
+
+  #fileInput {
+    display: none;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+
+  th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  th {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: bold;
+  }
+
+  tr:nth-child(even) {
+    background-color: #f9f9f9;
+  }
+
+  tr:hover {
+    background-color: #f0f0f0;
+  }
+
+  #dataTable {
+    margin-top: 2rem;
+    overflow-x: auto;
+  }
+
+  .button-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Journal Entry Assistant</h1>
+    <div class="upload-container">
+      <button id="uploadBtn">Upload File</button>
+      <input type="file" id="fileInput" accept=".xlsx" />
+    </div>
+    <div id="dataTable"></div>
+    <div class="button-container">
+      <button id="downloadBtn" style="display: none;">DOWNLOAD CSV</button>
+    </div>
+  </div>
+
+  <script>
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileInput = document.getElementById('fileInput');
+    const dataTable = document.getElementById('dataTable');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    const propertyGLAccountMap = {
+      'Belton MHP Homes LLC': '1000',
+      'Belton MHP Land LLC': '1001',
+      'Canton MHP Homes LLC': '1071',
+      'Canton MHP Land LLC': '1072',
+      'Columbia 2 MHP Homes LLC': '1062',
+      'Columbia 2 MHP Land LLC': '1063',
+      'Columbia MHP Homes LLC': '1054',
+      'Columbia MHP Land LLC': '1053',
+      'Des Moines MHP Homes LLC': '1033',
+      'Des Moines MHP Land LLC': '1032',
+      'Hamilton MHP Homes LLC': '1067',
+      'Hamilton MHP Land LLC': '1068',
+      'Marshall MHP Homes LLC': '1057',
+      'Marshall MHP Land LLC': '1056',
+      'Marshalltown MHP Homes LLC': '1084',
+      'Marshalltown MHP Land LLC': '1076',
+      'Mediapolis MHP Homes LLC': '1082',
+      'Mediapolis MHP Land LLC': '1083',
+      'Paradise Lane MHP & Storage, L.L.C': '1019',
+      'Paradise Lane MHP Homes LLC': '1046',
+      'QV Homes FFL LLC': '1081',
+      'QV Land FFL LLC': '1080',
+      'Rantoul MHP Homes LLC': '1025',
+      'Rantoul MHP Land LLC': '1024',
+      'Taylorville\'s Fairview MHP Homes LLC': '1049',
+      'Taylorville\'s Fairview MHP Land LLC': '1045',
+      'Centralia MHP Land LLC': '1088',
+      'Centralia MHP Homes LLC': '1087',
+      'Fairfield MHP Land LLC': '1089',
+      'Fairfield MHP Homes LLC': '1090'
+    };
+
+    function getNextFriday() {
+      const today = new Date();
+      const nextFriday = new Date(today);
+      nextFriday.setDate(today.getDate() + ((5 + 7 - today.getDay()) % 7));
+      return nextFriday.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    }
+
+    let tableData = [];
+
+    uploadBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        let jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+
+        // Remove the last row
+        jsonData.pop();
+
+        const nextFridayDate = getNextFriday();
+
+        // Get employee name
+        const employeeName = jsonData[1][jsonData[0].indexOf('Employee')] || '{Employee}';
+
+        // Process the data
+        const headers = jsonData[0];
+        const processedData = jsonData.slice(1).flatMap(row => {
+          const newRow = {
+            'BASIS': 'CASH',
+            'Date': nextFridayDate,
+            'Property': '',
+            'Unit': '',
+            'JOURNAL MEMO': '',
+            'GL ACCOUNT': '',
+            'DETAIL MEMO': '',
+            'DEBIT': '',
+            'CREDIT': '',
+            'REFERENCE': 'JE'
+          };
+          headers.forEach((header, index) => {
+            if (!['Hours', 'Cost', 'Mileage', 'Per Diem', 'Reimb', 'Task'].includes(header)) {
+              if (header === 'Property') {
+                newRow['Property'] = row[index] || '';
+              } else if (header === 'Unit') {
+                newRow['Unit'] = row[index] || '';
+              } else if (header === 'Employee') {
+                newRow['JOURNAL MEMO'] = `Reim CK ${row[index]} Labor`;
+              } else if (header === 'Expense') {
+                newRow['GL ACCOUNT'] = row[index] ? row[index].toString().slice(0, 4) : '';
+              } else if (header === 'Description') {
+                newRow['DETAIL MEMO'] = row[index] || '';
+              } else if (header === 'Total') {
+                newRow['DEBIT'] = row[index] || '';
+              }
+            }
+          });
+
+          const secondRow = {...newRow};
+          secondRow['GL ACCOUNT'] = propertyGLAccountMap[newRow['Property']] || '';
+          secondRow['CREDIT'] = newRow['DEBIT'];
+          secondRow['DEBIT'] = '';
+
+          return [newRow, secondRow];
+        });
+
+        // Calculate total DEBIT and CREDIT
+        const totalDebit = processedData.reduce((sum, row) => sum + parseFloat(row['DEBIT'] || 0), 0);
+        const totalCredit = processedData.reduce((sum, row) => sum + parseFloat(row['CREDIT'] || 0), 0);
+
+        // Add the two permanent rows at the beginning
+        const permanentRows = [
+          {
+            'BASIS': 'CASH',
+            'Date': nextFridayDate,
+            'Property': 'Augustine Property Management',
+            'Unit': '',
+            'JOURNAL MEMO': `Reim CK ${employeeName} Labor`,
+            'GL ACCOUNT': '1003',
+            'DETAIL MEMO': `Reim CK ${employeeName} Labor`,
+            'DEBIT': totalDebit.toFixed(2),
+            'CREDIT': '',
+            'REFERENCE': 'JE'
+          },
+          {
+            'BASIS': 'CASH',
+            'Date': nextFridayDate,
+            'Property': 'Augustine Property Management',
+            'Unit': '',
+            'JOURNAL MEMO': `Reim CK ${employeeName} Labor`,
+            'GL ACCOUNT': '5111',
+            'DETAIL MEMO': `Reim CK ${employeeName} Labor`,
+            'DEBIT': '',
+            'CREDIT': totalCredit.toFixed(2),
+            'REFERENCE': 'JE'
+          }
+        ];
+
+        tableData = [...permanentRows, ...processedData];
+
+        // Create table
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const tbody = document.createElement('tbody');
+
+        // Create header row
+        const headerRow = document.createElement('tr');
+        Object.keys(tableData[0]).forEach(key => {
+          const th = document.createElement('th');
+          th.textContent = key;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+
+        // Create data rows
+        tableData.forEach(row => {
+          const tr = document.createElement('tr');
+          Object.values(row).forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(thead);
+        table.appendChild(tbody);
+
+        // Clear previous content and add the new table
+        dataTable.innerHTML = '';
+        dataTable.appendChild(table);
+
+        // Show download button
+        downloadBtn.style.display = 'block';
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      // Get employee name from the first row
+      const employeeName = tableData[0]['JOURNAL MEMO'].split(' ')[2];
+      const date = tableData[0]['Date'];
+
+      // Create CSV content
+      let csvContent = "data:text/csv;charset=utf-8,";
+      
+      // Add headers
+      csvContent += Object.keys(tableData[0]).join(",") + "\r\n";
+      
+      // Add rows
+      tableData.forEach(row => {
+        csvContent += Object.values(row).map(value => `"${value}"`).join(",") + "\r\n";
+      });
+
+      // Create download link
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `${employeeName}_JE_${date}.csv`);
+      document.body.appendChild(link);
+
+      // Trigger download
+      link.click();
+
+      // Remove link
+      document.body.removeChild(link);
+
+      // Reset the page
+      dataTable.innerHTML = '';
+      downloadBtn.style.display = 'none';
+      fileInput.value = '';
+    });
+  </script>
+</body>
+</html>
